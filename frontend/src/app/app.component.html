@@ -1,0 +1,149 @@
+<main>
+  <header>
+    <p class="eyebrow">BIG DATA · OBSERVATORIO USGS</p>
+    <h1>Observatorio de actividad sísmica</h1>
+    <p>Eventos procesados y enriquecidos con el catálogo geográfico Natural Earth.</p>
+  </header>
+
+  <section class="info" aria-live="polite">
+    <strong>{{ mode() }} <span *ngIf="viewMode === 'replay'" class="badge">REPRODUCCIÓN</span></strong>
+    <p>{{ status() }}</p>
+    <p>{{ countriesStatus() }} · {{ count() }} puntos dibujados · {{ omitted() }} omitidos por coordenadas inválidas</p>
+    <p *ngIf="mode().startsWith('DEMOSTRACIÓN')">En la demo, los filtros se aplican a cuatro eventos ficticios; no son datos sísmicos reales.</p>
+    <p *ngIf="viewMode === 'replay'">Los casos controlados se identifican como PRUEBA; no se incluyen en las estadísticas.</p>
+    <p *ngIf="isIngestionStale()" class="error" role="status">Aviso: no hay una ingesta correcta en los últimos 3 minutos.</p>
+    <p *ngIf="error()" class="error" role="alert">Detalle: {{ error() }}</p>
+    <small>Último acceso correcto: {{ lastRead() }}<br>
+      Generación API: {{ generated() }} · Última ingesta USGS: {{ lastIngestion() }}</small>
+  </section>
+
+  <section class="filters" aria-label="Filtros de análisis">
+    <h2>Filtros comunes</h2>
+    <div class="filter-grid">
+      <label>Vista
+        <select [ngModel]="viewMode" (ngModelChange)="changeMode($event)">
+          <option value="live">Actividad reciente</option>
+          <option value="replay">Reproducción histórica</option>
+        </select>
+      </label>
+      <label>Desde (hora local)
+        <input type="datetime-local" [(ngModel)]="startLocal">
+      </label>
+      <label>Hasta (hora local)
+        <input type="datetime-local" [(ngModel)]="endLocal">
+      </label>
+      <label>Magnitud mínima
+        <input type="number" step="0.1" min="-10" max="10" [(ngModel)]="minMagnitude" placeholder="Sin mínimo">
+      </label>
+      <label>País
+        <select [(ngModel)]="countryId">
+          <option value="">Todos (incluye sin país)</option>
+          <option value="__none__">Sin país asignado</option>
+          <option *ngFor="let country of countries()" [value]="country.country_id">
+            {{ country.name_es || country.admin_name || country.country_id }}
+          </option>
+        </select>
+      </label>
+      <button type="button" (click)="applyFilters()" [disabled]="loading()">Aplicar filtros</button>
+    </div>
+  </section>
+
+  <section class="summary" *ngIf="statistics() as stats" aria-label="Resumen del periodo">
+    <article><span>Eventos</span><strong>{{ stats.counts.events }}</strong></article>
+    <article><span>Sin magnitud (antes del filtro de magnitud)</span><strong>{{ stats.counts.without_magnitude }}</strong></article>
+    <article><span>Sin profundidad</span><strong>{{ stats.counts.without_depth }}</strong></article>
+    <article><span>Sin país asignado</span><strong>{{ stats.counts.without_country }}</strong></article>
+  </section>
+
+  <div class="map" leaflet [leafletOptions]="options" (leafletMapReady)="onMapReady($event)"
+       aria-label="Mapa interactivo de terremotos"></div>
+  <footer class="legend">
+    <strong>Profundidad</strong>
+    <span><i class="dot shallow"></i>Menos de 70 km</span>
+    <span><i class="dot medium"></i>70–299,99 km</span>
+    <span><i class="dot deep"></i>300 km o más</span>
+    <span><i class="dot missing"></i>No disponible</span>
+    <p>Tamaño creciente con la magnitud; no representa energía ni área afectada. Magnitud desconocida: radio mínimo.</p>
+    <p *ngIf="hasMore()">El mapa y la tabla muestran una página; las estadísticas se calculan sobre el conjunto completo. <button (click)="loadMore()" [disabled]="loading()">Cargar más eventos</button></p>
+  </footer>
+
+  <section class="analysis" *ngIf="statistics() as stats">
+    <h2>Análisis del periodo</h2>
+    <div class="analysis-grid">
+      <article class="chart">
+        <h3>Eventos por país</h3>
+        <div class="bars">
+          <div class="bar-row" *ngFor="let row of stats.by_country.slice(0, 10)">
+            <span>{{ row.country_name }}</span><div class="track"><i [style.width.%]="barWidth(row.count, stats.by_country)"></i></div><b>{{ row.count }}</b>
+          </div>
+        </div>
+        <p *ngIf="!stats.by_country.length">Sin eventos para los filtros seleccionados.</p>
+      </article>
+      <article class="chart">
+        <h3>Eventos por hora UTC</h3>
+        <div class="bars hourly">
+          <div class="bar-row" *ngFor="let row of stats.hourly_utc">
+            <span>{{ row.hour | date:'MM-dd HH:mm':'UTC' }}</span><div class="track"><i [style.width.%]="barWidth(row.count, stats.hourly_utc)"></i></div><b>{{ row.count }}</b>
+          </div>
+        </div>
+      </article>
+      <article class="chart">
+        <h3>Distribución de magnitudes</h3>
+        <div class="bars">
+          <div class="bar-row" *ngFor="let row of stats.magnitude_distribution">
+            <span>{{ row.bucket }}</span><div class="track"><i [style.width.%]="barWidth(row.count, stats.magnitude_distribution)"></i></div><b>{{ row.count }}</b>
+          </div>
+        </div>
+      </article>
+      <article class="chart">
+        <h3>Distribución de profundidad</h3>
+        <div class="bars">
+          <div class="bar-row" *ngFor="let row of stats.depth_distribution">
+            <span>{{ row.bucket }}</span><div class="track"><i [style.width.%]="barWidth(row.count, stats.depth_distribution)"></i></div><b>{{ row.count }}</b>
+          </div>
+        </div>
+      </article>
+      <article class="chart comparison">
+        <h3>Comparación con {{ stats.historical_comparison.historical_year }}</h3>
+        <p>Periodo actual: <strong>{{ stats.historical_comparison.recent_total }}</strong> eventos en {{ stats.historical_comparison.recent_period_hours | number:'1.0-1' }} horas.</p>
+        <p>Histórico: <strong>{{ stats.historical_comparison.historical_total }}</strong> eventos / {{ stats.historical_comparison.historical_days }} días =
+          <strong>{{ stats.historical_comparison.historical_average_per_day | number:'1.0-2' }}</strong> por día.</p>
+        <p>Ritmo actual: <strong>{{ stats.historical_comparison.recent_per_day | number:'1.0-2' }}</strong> por día.
+          Razón: <strong>{{ stats.historical_comparison.relative_to_historical_daily_average === null ? 'ND' : (stats.historical_comparison.relative_to_historical_daily_average | number:'1.0-2') }}</strong>.</p>
+        <small>{{ stats.historical_comparison.note }}</small>
+      </article>
+    </div>
+    <h3>Conclusiones generadas para los filtros actuales</h3>
+    <ol class="conclusions"><li *ngFor="let conclusion of conclusions()">{{ conclusion }}</li></ol>
+  </section>
+
+  <section class="table-section" *ngIf="eventsData() as data">
+    <h2>Eventos consultables</h2>
+    <label class="search">Buscar en esta página
+      <input type="search" [(ngModel)]="tableSearch" placeholder="ID, lugar o país">
+    </label>
+    <p *ngIf="data.metadata?.truncated" class="notice">
+      La API pagina los resultados ({{ data.metadata?.total }} en total); las estadísticas no usan esta muestra.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>ID</th><th>Fecha UTC</th><th>Magnitud</th><th>Profundidad</th><th>Lugar</th><th>País</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let event of visibleEvents">
+            <td>{{ event.id }}</td><td>{{ event.properties.time | date:'yyyy-MM-dd HH:mm:ss':'UTC' }}</td>
+            <td>{{ event.properties.mag ?? 'ND' }} {{ event.properties.magType ?? '' }}</td>
+            <td>{{ depthLabel(event) }}<span *ngIf="hasDepth(event)"> km</span></td>
+            <td>{{ event.properties.place ?? 'Sin descripción' }}<span *ngIf="event.properties.test_case" class="badge">PRUEBA</span></td>
+            <td>{{ event.properties.country_name ?? 'Sin país asignado' }}</td>
+          </tr>
+          <tr *ngIf="!visibleEvents.length"><td colspan="6">No hay eventos para mostrar con esta búsqueda.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="disclaimer">
+    <p>La comparación describe recuentos del catálogo y no predice terremotos ni evalúa riesgo. El periodo reciente puede verse afectado por retrasos/revisiones de USGS. El mapa base puede desactivarse desde el selector de capas.</p>
+    <p>Modo demo contiene eventos ficticios; no usar para conclusiones de sismicidad real.</p>
+  </footer>
+</main>

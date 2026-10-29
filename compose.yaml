@@ -1,0 +1,111 @@
+services:
+  postgres:
+    image: postgres:17.2
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-observatorio}
+      POSTGRES_USER: ${POSTGRES_USER:-observatorio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - ./backend/sql/quality.sql:/tmp/quality.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  kafka:
+    image: apache/kafka:3.9.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-observatorio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-observatorio}
+      COUNTRY_GEOJSON: /app/frontend/datos/paises.geojson
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
+      RAW_RETENTION_DAYS: ${RAW_RETENTION_DAYS:-30}
+    volumes:
+      - ./frontend/public/datos/paises.geojson:/app/frontend/datos/paises.geojson:ro
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/salud', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  consumer:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.consumer"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-observatorio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-observatorio}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_LIVE_TOPIC: ${KAFKA_LIVE_TOPIC:-earthquakes.live}
+      KAFKA_REPLAY_TOPIC: ${KAFKA_REPLAY_TOPIC:-earthquakes.replay}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-observatorio-consumer}
+      COUNTRY_GEOJSON: /app/frontend/datos/paises.geojson
+    volumes:
+      - ./frontend/public/datos/paises.geojson:/app/frontend/datos/paises.geojson:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  producer:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.producer"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-observatorio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-observatorio}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_LIVE_TOPIC: ${KAFKA_LIVE_TOPIC:-earthquakes.live}
+      POLL_SECONDS: ${POLL_SECONDS:-60}
+      USGS_FEED_URL: https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson
+      HTTP_TIMEOUT_SECONDS: ${HTTP_TIMEOUT_SECONDS:-20}
+      RAW_RETENTION_DAYS: ${RAW_RETENTION_DAYS:-30}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  kafka_data:

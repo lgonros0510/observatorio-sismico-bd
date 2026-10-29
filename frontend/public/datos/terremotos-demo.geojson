@@ -1,0 +1,89 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "generated": 1793113200000,
+    "mode": "demo",
+    "description": "Datos sintéticos para probar la interfaz; no son terremotos reales."
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "demo-1",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.7,
+          40.4,
+          12
+        ]
+      },
+      "properties": {
+        "mag": 3.2,
+        "place": "Ejemplo ficticio A",
+        "time": 1793098800000,
+        "updated": 1793098800000,
+        "country_id": "ESP",
+        "country_name": "España"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "demo-2",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          138,
+          36,
+          95
+        ]
+      },
+      "properties": {
+        "mag": 5.1,
+        "place": "Ejemplo ficticio B",
+        "time": 1793102400000,
+        "updated": 1793102400000,
+        "country_id": "JPN",
+        "country_name": "Japón"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "demo-3",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -72,
+          -35,
+          350
+        ]
+      },
+      "properties": {
+        "mag": 6.0,
+        "place": "Ejemplo ficticio C",
+        "time": 1793106000000,
+        "updated": 1793106000000,
+        "country_id": "CHL",
+        "country_name": "Chile"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "demo-4",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -30,
+          25,
+          8
+        ]
+      },
+      "properties": {
+        "mag": null,
+        "place": "Ejemplo ficticio en el océano",
+        "time": 1793109600000,
+        "updated": 1793109600000,
+        "country_name": null
+      }
+    }
+  ]
+}
